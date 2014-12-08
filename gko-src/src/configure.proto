@@ -1,0 +1,85 @@
+package bbts.message;
+
+message DownloadConfigure {
+  optional int32  download_timeout             = 1;
+  optional int32  max_announce_interval        = 2;
+  optional int32  cluster_thread_num           = 3;
+  optional string java_home                    = 4;
+  optional string class_path                   = 5;
+  optional string socket_file                  = 6;
+  optional string task_stat_file               = 7;
+  optional string peer_stat_file               = 8;
+  optional string download_log_file            = 9;
+  optional string tracker_conf_file            = 10;
+  
+  optional int32  upload_limit                 = 51;
+  optional int32  download_limit               = 52;
+  optional int32  connection_limit             = 53;
+  optional int32  peers_num_want               = 54;
+  optional int32  cache_size                   = 56;
+  optional int32  cache_expiry                 = 57;
+  optional int32  file_pool_size               = 58;
+  optional int32  max_metadata_size            = 59;
+  optional int32  seeding_announce_interval    = 60;
+  optional int32  min_reconnect_time           = 61;
+  optional int32  peer_connect_timeout         = 62;
+  optional int32  read_cache_line_size         = 63;
+  optional int32  write_cache_line_size        = 64;
+  optional bool   lock_disk_cache              = 65;
+  optional bool   suggest_mode                 = 66;
+  optional int32  max_queued_disk_bytes        = 67;
+  optional int32  max_out_request_queue        = 68;
+  optional int32  max_allowed_in_request_queue = 69;
+  optional int32  whole_pieces_threshold       = 70;
+  optional int32  request_queue_time           = 71;
+  optional int32  send_buffer_low_watermark    = 72;
+  optional int32  send_buffer_watermark        = 73;
+  optional int32  send_socket_buffer_size      = 74;
+  optional int32  recv_socket_buffer_size      = 75;
+}
+
+message AgentConfigure {
+  optional string working_dir                  = 1;
+  optional string dynamic_conf_file            = 2;
+  optional string resume_dir                   = 3;
+  optional string lock_file                    = 4;
+  optional string database_file                = 5;
+  optional string socket_file                  = 6;
+  optional string task_stat_file               = 7;
+  optional string peer_stat_file               = 8; 
+  optional string download_log_file            = 9;
+  optional string tracker_conf_file            = 10;
+  
+  optional int32  listen_port                  = 20;
+  optional int32  worker_thread_num            = 21;
+  optional int32  db_del_interval              = 22;
+  optional int32  active_seeds                 = 23;
+  optional int32  max_total_meta_num           = 24;
+  optional int32  max_total_meta_size          = 25;
+  
+  optional int32  upload_limit                 = 51;
+  optional int32  download_limit               = 52;
+  optional int32  connection_limit             = 53;
+  optional int32  peers_num_want               = 54;
+  optional bool   disable_os_cache             = 55;
+  optional int32  cache_size                   = 56;
+  optional int32  cache_expiry                 = 57;
+  optional int32  file_pool_size               = 58;
+  optional int32  max_metadata_size            = 59;
+  optional int32  seeding_announce_interval    = 60;
+  optional int32  min_reconnect_time           = 61;
+  optional int32  peer_connect_timeout         = 62;
+  optional int32  read_cache_line_size         = 63;
+  optional int32  write_cache_line_size        = 64;
+  optional bool   lock_disk_cache              = 65;
+  optional bool   suggest_mode                 = 66;
+  optional int32  max_queued_disk_bytes        = 67;
+  optional int32  max_out_request_queue        = 68;
+  optional int32  max_allowed_in_request_queue = 69;
+  optional int32  whole_pieces_threshold       = 70;
+  optional int32  request_queue_time           = 71;
+  optional int32  send_buffer_low_watermark    = 72;
+  optional int32  send_buffer_watermark        = 73;
+  optional int32  send_socket_buffer_size      = 74;
+  optional int32  recv_socket_buffer_size      = 75;
+}

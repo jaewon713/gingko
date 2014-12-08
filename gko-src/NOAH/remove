@@ -1,0 +1,5 @@
+#! /bin/sh
+cd "$(dirname "$0")" || exit 1
+source ./common
+shutdown
+exit 0

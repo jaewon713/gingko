@@ -1,0 +1,137 @@
+#!/bin/sh -
+
+readonly G_SUPERVISE_NAME="supervise.bbts-group"
+readonly G_SUPERVISE_BIN="./supervise.bbts-group"
+readonly G_GROUP_NAME="gko3 bbts-group"
+
+CONF=""
+OPERATION=""
+
+print_help() {
+  echo "Usage: bbts-group-control /path/to/conf start|stop|restart"
+  exit 0
+}
+
+check_is_group_running() {
+  pid=$(ps -ef | fgrep "${G_GROUP_NAME}" | fgrep -i "${CONF}" | fgrep -v "fgrep" | awk '{print $2}')
+  if [ -n "${pid}" ]; then
+    return 1
+  fi
+  return 0
+}
+
+check_is_supervise_running() {
+  local pid=$(ps -ef | fgrep "${G_SUPERVISE_NAME}" | fgrep -i "${CONF}" | fgrep -v "fgrep" | awk '{print $2}')
+  if [ -n "${pid}" ]; then
+    return 1
+  fi
+  return 0
+}
+
+stop_group() {
+  check_is_group_running
+  if [ $? -eq 0 ]; then
+    return 0
+  fi
+
+  for i in 1 2 3 4 5; do
+    kill -TERM `ps -ef | fgrep "${G_GROUP_NAME}" | fgrep  -i "${CONF}" | fgrep -v "fgrep" | awk '{print $2}'`
+    sleep 1
+    check_is_group_running
+    if [ $? -eq 0 ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+start_supervise() {
+  # supervise is running
+  check_is_supervise_running
+  if [ $? -eq 1 ]; then
+    echo "start bbts-group for conf:${CONF} successfully"
+    return 0
+  fi
+
+  (setsid "${G_SUPERVISE_BIN}" "${CONF}" "--run" >/dev/null 2>&1 &)
+  sleep 1
+
+  check_is_supervise_running;
+  if [ $? -eq 1 ]; then
+    echo "start bbts-group for conf:${CONF} successfully"
+    return 0
+  fi
+
+  echo "start bbts-group for conf:${CONF} failed"
+  return 1
+}
+
+stop_supervise() {
+  stop_group 
+  if [ $? -ne 0 ]; then
+    echo "stop bbts-group for conf:${CONF} failed"
+    return 1
+  fi
+
+  # stop supervise itself
+  check_is_supervise_running
+  if [ $? -eq 0 ]; then
+    echo "stop bbts-group for conf:${CONF} successfully"
+    return 0
+  fi
+
+  for i in 1 2 3 4 5; do
+    kill -TERM `ps -ef | fgrep "${G_SUPERVISE_NAME}" | fgrep -i "${CONF}" | fgrep -v "fgrep" | awk '{print $2}'`
+    sleep 1
+    check_is_supervise_running
+    if [ $? -eq 0 ]; then
+      echo "stop bbts-group for conf:${CONF} successfully"
+      return 0
+    fi
+  done
+
+  echo "stop bbts-group for conf:${CONF} failed"
+  return 1
+}
+
+main() {
+  case "${OPERATION}" in 
+    'start')
+      start_supervise
+      ;;
+    'stop')
+      stop_supervise
+      ;;
+    'restart')
+      stop_supervise
+      if [ $? -eq 1 ]; then
+        exit 1
+      fi
+      start_supervise
+      ;;
+    *)
+      echo "operation must be start|stop|restart!"
+      exit 1
+      ;;
+  esac
+}
+
+if [ $# -eq 0 ]; then
+  print_help
+fi
+
+CONF=$(readlink -f $1)
+if [ x"${CONF}" == x"" ]; then
+  echo "conf file $1 is not exist"
+  exit 1
+fi
+OPERATION=$2
+
+# get supervise.bbts-group really path
+gko3_dir=$(which gko3 | xargs readlink -f)
+dir=$(dirname "${gko3_dir}")
+cd "${dir}" || exit 1
+
+main
+

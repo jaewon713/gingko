@@ -1,0 +1,49 @@
+package bbts;
+
+message GroupConfig {
+  required  int32   timeout                 = 1[default=-1];
+  required  int32   upload_rate_limit       = 2[default=100];         // MB
+  required  int32   download_rate_limit     = 3[default=100];         // MB
+  required  int32   connection_limit        = 4[default=8000];
+  optional  int32   finished_timeout        = 5[default=3600];
+  optional  int32   max_cluster_thread_num  = 6[default=10];
+
+  // bbts-group file config, should NOT be modify by user
+  optional  bool    is_allow_all_add      = 7[default=false];
+  optional  string  absolute_path         = 11;
+  optional  string  group_data_path       = 12[default="/bbts-group-data"];
+  optional  string  log_file              = 13[default="bbts-group.log"] ;
+  optional  string  resume_dir            = 14[default="bbts-group.resume"];
+  optional  string  lock_file             = 15[default="bbts-group.lock"];
+  optional  string  unix_socket           = 16[default="bbts-group.sock"];
+  optional  string  peer_stat_log_file    = 17[default="bbts-group.peer"];
+
+  // optional group options
+  optional  int32   max_metadata_size           = 31[default=50];       // MB
+  optional  int32   peers_num_want              = 32[default=25];
+  optional  bool    disk_io_read_mode           = 33[default=true];
+  optional  bool    disk_io_write_mode          = 34[default=true];
+  optional  int32   seed_announce_interval      = 35[default=1800];     // s 
+  optional  int32   min_reconnect_time          = 36[default=1];        // s
+  optional  int32   max_queued_disk_bytes       = 37[default=20];       // MB
+  optional  int32   max_out_request_queue       = 38[default=1500];
+  optional  int32   max_allowed_in_request_queue= 39[default=2000];
+  optional  int32   whole_pieces_threshold      = 40[default=20];       // s
+  optional  int32   request_queue_time          = 41[default=3];        // s
+  optional  int32   cache_size                  = 42[default=128];      // MB
+  optional  int32   cache_expiry                = 43[default=300];      // s
+  optional  int32   read_cache_line_size        = 44[default=32];
+  optional  int32   write_cache_line_size       = 45[default=32];
+  optional  int32   file_pool_size              = 46[default=500];
+  optional  int32   send_buffer_watermark       = 47[default=10];       // MB
+  optional  int32   send_buffer_low_watermark   = 48[default=1024];      // KB
+  optional  int32   send_socket_buffer_size     = 49[default=2048];     // KB
+  optional  int32   recv_socket_buffer_size     = 50[default=2048];     // KB
+  optional  int32   active_seeds                = 51[default=32000];
+  optional  int32   active_limit                = 52[default=32000];
+  optional  int32   active_downloads            = 53[default=32000];
+  optional  bool    suggest_mode                = 54[default=true]; 
+  optional  int32   listen_port                 = 55[default=18000];
+  optional  int32   peer_connection_timeout     = 56[default=3];        // s
+  optional  bool    disable_os_cache            = 57[default=false];
+}

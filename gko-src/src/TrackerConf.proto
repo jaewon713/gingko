@@ -1,0 +1,16 @@
+package bbts.message;
+
+message Tracker {
+    optional string host = 1;
+    optional int32  port = 2;
+}
+
+message TrackerArea {
+    repeated string  machine_room = 1;
+    repeated Tracker tracker      = 2;
+}
+
+message TrackerConf {
+    repeated TrackerArea area    = 1;
+    optional TrackerArea default = 2;
+}

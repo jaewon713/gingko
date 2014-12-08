@@ -1,0 +1,45 @@
+#! /bin/sh
+
+source ./control.conf
+
+readonly GKO3=gko3
+readonly KEY_WORD=bbts-agent
+readonly CURRENT_PATH=$(pwd)
+readonly BIN_PATH=`dirname ${CURRENT_PATH}`/bin
+readonly AGENT_PROGRAM="${BIN_PATH}/${GKO3} ${KEY_WORD}"
+
+readonly LOCK_FILE="${WORKING_DIR}/lock"
+readonly ETAG_FILE="${WORKING_DIR}/etag"
+readonly TRACKER_CONF="${WORKING_DIR}/tracker.conf"
+
+check_agent_running()
+{
+    ${BIN_PATH}/file_is_locked ${LOCK_FILE} >/dev/null 2>&1
+    return $?
+}
+
+ok()
+{
+    echo `date` "$1 bbts-agent success." | tee -a ${LOG_FILE}
+}
+
+die()
+{
+    echo `date` "$1 bbts-agent failed." | tee -a ${LOG_FILE}
+}
+
+shutdown()
+{    
+    for i in 1 2 3 4 5; do
+        pid=`ps -ef | fgrep "${GKO3}" | fgrep "${KEY_WORD}" | fgrep -v "fgrep" | awk '{print $2}'`
+        if [ -z "${pid}" ]; then
+            ok 'shutdown'
+            return 0
+        fi
+        kill -KILL ${pid}
+        sleep 1
+    done
+    
+    die 'shutdown'
+    return 1
+}

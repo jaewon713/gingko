@@ -1,0 +1,4 @@
+bin/gko3 /usr/bin/gko3
+bin/gko3_start_seeding_task /usr/bin/gko3_start_seeding_task
+bin/bbts-group-control /usr/bin/bbts-group-control
+bin/hadoopseed /usr/bin/hadoopseed

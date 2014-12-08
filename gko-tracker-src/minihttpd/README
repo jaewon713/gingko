@@ -1,0 +1,9 @@
+libminihttpd is a small library that is supposed to make it easy 
+to run an HTTP server as part of another application.
+Its Implementation is based on libevent.
+
+[usage]: see "./sample/httpd_test.cpp"
+
+xiewenhui@baidu.com
+2013-06-17
+

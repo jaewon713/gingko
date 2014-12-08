@@ -1,0 +1,26 @@
+#!/bin/sh -
+
+readonly G_GROUP_NAME="gko3"
+readonly G_START_CYCLE=30
+
+CONF=""
+OPERATION=""
+
+start_group() {
+  while true; do
+    (setsid "${G_GROUP_NAME}" bbts-group --conf "${CONF}" >/dev/null 2>&1 &)
+    sleep "${G_START_CYCLE}"
+  done
+}
+
+main() {
+  if [ x"${OPERATION}" = x"--run" ]; then
+    start_group
+  else
+    exit 1
+  fi
+}
+
+CONF=$1
+OPERATION=$2
+main

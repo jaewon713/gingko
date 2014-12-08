@@ -1,0 +1,148 @@
+#! /bin/sh
+
+readonly PATH='/usr/sbin:/usr/bin:/sbin:/bin'
+cd "`dirname $0`/../bin" || exit 1
+
+readonly SLEEP='sleep'
+
+readonly G_SBIN_DIR=`pwd`
+readonly G_PROC_NAME='bbts_tracker'
+readonly G_CONTROL_NAME='noah_control'
+readonly G_SUPERVISE_NAME='supervise.bbts_tracker'
+readonly G_CURL='curl --limit-rate 3m '
+readonly G_REDIS_CONF='../conf/redis.conf'
+readonly G_TRACKER_CONF='../conf/tracker.conf'
+readonly G_REDIS_CONF_URL='<$redis_conf_url$>'
+
+check()
+{
+    ps -fj ax | fgrep "${G_PROC_NAME}"| fgrep -v 'fgrep' >/dev/null 2>&1
+    ret1=$?
+    ps -fj ax | fgrep "${G_SUPERVISE_NAME}"| fgrep -v 'fgrep' >/dev/null 2>&1
+    ret2=$?
+    if [ ${ret1} -eq 0 ] && [ ${ret2} -eq 0 ]; then
+      return 0
+    else
+      return 1
+    fi
+}
+
+help()
+{
+    echo "${0} <start|stop|restart|shutdown|reload|status>"
+    exit 1
+}
+
+die()
+{
+    echo "[FAILED] ${1}"
+    exit 1
+}
+
+ok()
+{
+    echo "[OK] ${1}"
+}
+
+signal()
+{
+    #kill supervise
+    killall -9 ${G_SUPERVISE_NAME}
+
+    #kill bscpserver
+    all_possible_id=`ps aux | fgrep "${G_PROC_NAME}" | fgrep -v 'fgrep' | \
+                    fgrep -v "$G_CONTROL_NAME" | fgrep -v "$G_PROC_NAME: " | awk '{print $2}'`
+    for proc_id in $all_possible_id
+    do
+        kill -9 ${proc_id}
+        if [ $? -ne 0 ];then
+            echo "[FAILED] kill ${proc_id} error"
+        fi
+    done
+}
+
+start()
+{
+    check
+    if [ $? -eq 0 ]; then
+        ok "start"
+        return 0
+    fi
+
+    ${G_CURL} -o ${G_REDIS_CONF} ${G_REDIS_CONF_URL} >/dev/null 2>&1 || die "start"
+    #start programe now
+    (setsid ./${G_SUPERVISE_NAME} </dev/null >/dev/null 2>&1 &)
+    ${SLEEP} 1
+    check || die "start"
+    ok "start"
+    return 0
+}
+
+stop()
+{
+    check
+    if [ $? -ne 0 ]; then
+        ok "stop"
+        return 0
+    fi
+
+    for i in 1 2 3 4 5; do
+        signal
+        ${SLEEP} 1
+        check
+        if [ $? -ne 0 ]; then
+            ok "stop"
+            return 0
+        fi
+    done
+    die "stop"
+}
+
+restart()
+{
+    stop
+    start
+    return 0
+}
+
+shutdown()
+{
+    killall -9 ${G_SUPERVISE_NAME}
+    killall -9 ${G_PROC_NAME}
+    ok "Shutdown"
+    return 0;
+}
+
+status()
+{
+    check
+    if [ $? -eq 0 ]; then
+        echo 'Running'
+        return 0
+    else
+        echo 'Not running'
+        return 1
+    fi
+}
+
+case "${1}" in
+start)
+    start
+    ;;
+stop)
+    stop
+    ;;
+restart)
+    restart
+    ;;
+shutdown)
+    shutdown
+    ;;
+status)
+    status
+    ;;
+*)
+    help
+    ;;
+esac
+

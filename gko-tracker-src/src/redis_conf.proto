@@ -1,0 +1,19 @@
+package bbts;
+
+message HostPair {
+  optional string master_hostname              = 1;
+  optional int32  master_port                  = 2;
+  optional int32  master_weight                = 3;
+  optional string slave_hostname               = 4;
+  optional int32  slave_port                   = 5;
+  optional int32  slave_weight                 = 6;
+}
+
+message RedisConf {
+  optional int32    max_queue_length           = 1;
+  optional int32    timeout                    = 2;
+  optional string   passwd                     = 3;
+  optional string   database                   = 4;
+  repeated HostPair host_pair                  = 5;
+}
+

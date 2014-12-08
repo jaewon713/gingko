@@ -1,0 +1,12 @@
+include(${PROJECT_SOURCE_DIR}/config.cmake)
+#link_directories(${PROJECT_SOURCE_DIR}/lib)
+add_library(hdfstool SHARED hdfstool)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Wl,--rpath,$ENV{HADOOP_HOME}/libhdfs,--rpath,$ENV{HADOOP_HOME}/lib/native,--rpath,$ENV{JRE_HOME}/lib/amd64/server -Wl,--rpath-link=./")
+target_link_libraries(hdfstool ${JSIG_LIB} ${JVM_LIB} ${HDFS_LIB})
+set(CMAKE_SKIP_RPATH on)
+
+install(TARGETS hdfstool LIBRARY DESTINATION lib)
+if (BUILD_BAIDU)
+    install(DIRECTORY hadoopseed/ DESTINATION py PATTERN .svn EXCLUDE PATTERN hadoopseed/hadoopseed EXCLUDE)
+    install(PROGRAMS hadoopseed/hadoopseed DESTINATION bin)
+endif()

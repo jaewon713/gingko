@@ -1,0 +1,1751 @@
+diff -Naur libtorrent-rasterbar-1.0.0/bindings/python/compile_flags libtorrent/bindings/python/compile_flags
+--- libtorrent-rasterbar-1.0.0/bindings/python/compile_flags	2014-05-12 07:22:24.000000000 +0800
++++ libtorrent/bindings/python/compile_flags	2014-10-11 18:55:34.000000000 +0800
+@@ -1 +1 @@
+- -DTORRENT_USE_OPENSSL  -DWITH_SHIPPED_GEOIP_H  -DBOOST_ASIO_HASH_MAP_BUCKETS=1021  -DBOOST_EXCEPTION_DISABLE  -DBOOST_ASIO_ENABLE_CANCELIO  -DBOOST_ASIO_DYN_LINK -DTORRENT_LINKING_SHARED  -I/opt/local/include    -lboost_system-mt -lboost_python-mt  -lssl -lcrypto  -L/opt/local/lib  -I/opt/local/include 
++ -DTORRENT_NO_DEPRECATE  -DTORRENT_DISABLE_ENCRYPTION  -DTORRENT_DISABLE_GEO_IP  -DTORRENT_DISABLE_DHT  -DBOOST_ASIO_HASH_MAP_BUCKETS=1021  -DBOOST_EXCEPTION_DISABLE  -DBOOST_ASIO_ENABLE_CANCELIO  -DBOOST_ASIO_DYN_LINK -I/home/users/liuming03/workspace/op/oped/noah/thirdparty/libtorrent/../../../../../third-64/boost/include -I./ -lrt -lpthread  -L./ -lboost_system  -lpthread    
+diff -Naur libtorrent-rasterbar-1.0.0/bindings/python/link_flags libtorrent/bindings/python/link_flags
+--- libtorrent-rasterbar-1.0.0/bindings/python/link_flags	2014-05-12 07:22:24.000000000 +0800
++++ libtorrent/bindings/python/link_flags	2014-10-11 18:55:34.000000000 +0800
+@@ -1 +1 @@
+--L/opt/local/lib 
++-L/home/users/liuming03/workspace/op/oped/noah/thirdparty/libtorrent/../../../../../third-64/boost/lib 
+diff -Naur libtorrent-rasterbar-1.0.0/configure libtorrent/configure
+--- libtorrent-rasterbar-1.0.0/configure	2014-05-12 07:22:12.000000000 +0800
++++ libtorrent/configure	2014-10-11 18:55:34.000000000 +0800
+@@ -16217,7 +16217,7 @@
+ LIBS="$PTHREAD_LIBS $LIBS"
+ CFLAGS="$PTHREAD_CFLAGS $CFLAGS"
+ CC="$PTHREAD_CC"
+-CXXFLAGS="$CXXFLAGS -ftemplate-depth=120"
++CXXFLAGS="$CXXFLAGS"
+ 
+ $as_echo  "Checking for visibility support:"
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking for __attribute__((visibility(\"hidden\")))" >&5
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/add_torrent_params.hpp libtorrent/include/libtorrent/add_torrent_params.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/add_torrent_params.hpp	2014-04-30 04:14:17.000000000 +0800
++++ libtorrent/include/libtorrent/add_torrent_params.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -244,6 +244,9 @@
+ 			// the torrent handle immediately after adding it.
+ 			flag_sequential_download = 0x800,
+ 
++			// for seed mode announce to tracker, added by liuming03
++			flag_real_seed = 0x1000,
++
+ 			// internal
+ 			default_flags = flag_update_subscribe | flag_auto_managed | flag_paused | flag_apply_ip_filter
+ #ifndef TORRENT_NO_DEPRECATE
+@@ -272,6 +275,10 @@
+ 		// a list of hostname and port pairs, representing DHT nodes to be added
+ 		// to the session (if DHT is enabled). The hostname may be an IP address.
+ 		std::vector<std::pair<std::string, int> > dht_nodes;
++
++		// thrift trackers list
++		std::vector<std::pair<std::string, int> > thrift_trackers;
++
+ 		std::string name;
+ 		std::string save_path;
+ 
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/aux_/session_impl.hpp libtorrent/include/libtorrent/aux_/session_impl.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/aux_/session_impl.hpp	2014-05-11 16:19:59.000000000 +0800
++++ libtorrent/include/libtorrent/aux_/session_impl.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -808,6 +808,13 @@
+ 			tcp::endpoint m_ipv6_interface;
+ 			tcp::endpoint m_ipv4_interface;
+ 			
++			tcp::endpoint m_ipv4_local_interface;
++			void init_local_interface();
++			const tcp::endpoint& local_interface()
++			{
++				return m_ipv4_local_interface;
++			}
++
+ 			// since we might be listening on multiple interfaces
+ 			// we might need more than one listen socket
+ 			std::list<listen_socket_t> m_listen_sockets;
+@@ -1245,6 +1252,14 @@
+ 
+ 			// the main working thread
+ 			boost::scoped_ptr<thread> m_thread;
++			 // set announce callback, added by liuming03
++			typedef boost::function<void(torrent_handle, boost::shared_ptr<ex_announce_request>)> ex_announce_func;
++			ex_announce_func m_ex_annfunc;
++			void add_ex_announce_func(const ex_announce_func &func)
++			{
++				m_ex_annfunc = func;
++			}
++
+ 
+ #if TORRENT_USE_ASSERTS && defined BOOST_HAS_PTHREADS
+ 			pthread_t m_network_thread;
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/config.hpp libtorrent/include/libtorrent/config.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/config.hpp	2014-05-03 11:39:15.000000000 +0800
++++ libtorrent/include/libtorrent/config.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -475,9 +475,9 @@
+ #define TORRENT_USE_IFADDRS 0
+ #endif
+ 
+-#ifndef TORRENT_USE_IPV6
+-#define TORRENT_USE_IPV6 1
+-#endif
++//#ifndef TORRENT_USE_IPV6
++//#define TORRENT_USE_IPV6 1
++//#endif
+ 
+ #ifndef TORRENT_USE_MLOCK
+ #define TORRENT_USE_MLOCK 1
+@@ -509,9 +509,9 @@
+ #define TORRENT_COMPACT_PICKER 0
+ #endif
+ 
+-#ifndef TORRENT_USE_I2P
+-#define TORRENT_USE_I2P 1
+-#endif
++//#ifndef TORRENT_USE_I2P
++//#define TORRENT_USE_I2P 1
++//#endif
+ 
+ #if !defined TORRENT_IOV_MAX
+ #ifdef IOV_MAX
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/create_torrent.hpp libtorrent/include/libtorrent/create_torrent.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/create_torrent.hpp	2014-03-23 14:56:36.000000000 +0800
++++ libtorrent/include/libtorrent/create_torrent.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -262,6 +262,12 @@
+ 		// sources than the tracker for peers, and to not advertize itself publicly,
+ 		// apart from the tracker.
+ 		void set_priv(bool p) { m_private = p; }
++
++		void set_cluster_config(const std::string &host, int port, const std::string &user
++			, const std::string &passwd, const std::string &path);
++
++		const sha1_hash& get_info_hash() { return m_info_hash; }
++
+ 		bool priv() const { return m_private; }
+ 
+ 		// returns the number of pieces in the associated file_storage object.
+@@ -333,6 +339,9 @@
+ 		// this is the root cert for SSL torrents
+ 		std::string m_root_cert;
+ 
++		// hdfs entry, added by liuming03
++		cluster_config_entry m_cluster_config;
++
+ 		// this is used when creating a torrent. If there's
+ 		// only one file there are cases where it's impossible
+ 		// to know if it should be written as a multifile torrent
+@@ -371,7 +380,7 @@
+ 
+ 		inline void nop(int) {}
+ 
+-		int get_file_attributes(std::string const& p);
++		int get_file_attributes(std::string const& p, int flags);
+ 		std::string get_symlink_path(std::string const& p);
+ 
+ 		// internal
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/extensions/metadata_transfer.hpp libtorrent/include/libtorrent/extensions/metadata_transfer.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/extensions/metadata_transfer.hpp	2013-12-21 14:06:33.000000000 +0800
++++ libtorrent/include/libtorrent/extensions/metadata_transfer.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -51,16 +51,16 @@
+ 	struct torrent_plugin;
+ 	class torrent;
+ 
+-#ifndef TORRENT_NO_DEPRECATE
++//#ifndef TORRENT_NO_DEPRECATE
+ 	// constructor function for the metadata transfer extension. This
+ 	// extension has been superceded by the ut_metadata extension and
+ 	// is deprecated. It can be either be passed in the
+ 	// add_torrent_params::extensions field, or
+ 	// via torrent_handle::add_extension().
+-	TORRENT_DEPRECATED_PREFIX
++//	TORRENT_DEPRECATED_PREFIX
+ 	TORRENT_EXPORT boost::shared_ptr<torrent_plugin>
+-	create_metadata_plugin(torrent*, void*) TORRENT_DEPRECATED;
+-#endif
++	create_metadata_plugin(torrent*, void*); //TORRENT_DEPRECATED;
++//#endif
+ }
+ 
+ #endif // TORRENT_DISABLE_EXTENSIONS
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/file.hpp libtorrent/include/libtorrent/file.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/file.hpp	2014-03-23 14:56:36.000000000 +0800
++++ libtorrent/include/libtorrent/file.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -96,13 +96,13 @@
+ 			directory = 0x4000,  // directory
+ 			regular_file = 0x8000  // regular
+ #else
+-			fifo = 0010000, // named pipe (fifo)
+-			character_special = 0020000,  // character special
+-			directory = 0040000,  // directory
+-			block_special = 0060000,  // block special
+-			regular_file = 0100000,  // regular
+-			link = 0120000,  // symbolic link
+-			socket = 0140000  // socket
++			fifo = 0x01000, // named pipe (fifo)
++			character_special = 0x02000,  // character special
++			directory = 0x04000,  // directory
++			block_special = 0x08000,  // block special (maybe a bug, modify by liuming03)
++			regular_file = 0x10000,  // regular
++			link = 0x20000,  // symbolic link
++			socket = 0x40000  // socket
+ #endif
+ 		} modes_t;
+ 		int mode;
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/file_storage.hpp libtorrent/include/libtorrent/file_storage.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/file_storage.hpp	2014-03-23 14:56:36.000000000 +0800
++++ libtorrent/include/libtorrent/file_storage.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -41,6 +41,7 @@
+ #include "libtorrent/assert.hpp"
+ #include "libtorrent/peer_request.hpp"
+ #include "libtorrent/peer_id.hpp"
++#include "libtorrent/entry.hpp"
+ 
+ namespace libtorrent
+ {
+@@ -102,6 +103,8 @@
+ 		// the ``symlink_index`` refers to a string which specifies the original location
+ 		// where the data for this file was found.
+ 		bool symlink_attribute:1;
++
++		mode_t mode; // added by liuming03
+ 	};
+ 
+ 	// only export this type if deprecated functions are enabled
+@@ -131,6 +134,7 @@
+ 			, symlink_attribute(false)
+ 			, name(NULL)
+ 			, path_index(-1)
++			, mode(0644)
+ 		{}
+ 
+ 		internal_file_entry(file_entry const& e)
+@@ -145,6 +149,7 @@
+ 			, symlink_attribute(e.symlink_attribute)
+ 			, name(NULL)
+ 			, path_index(-1)
++			, mode(e.mode)
+ 		{
+ 			set_name(e.path.c_str());
+ 		}
+@@ -204,6 +209,8 @@
+ 		// in this field contains the full, absolute path
+ 		// to the file
+ 		int path_index;
++
++		mode_t mode; // added by liuming03
+ 	};
+ 
+ 	// represents a window of a file in a torrent.
+@@ -225,12 +232,40 @@
+ 		size_type size;
+ 	};
+ 
++	struct TORRENT_EXPORT symlink_file
++	{
++		symlink_file()
++			: mode(0777)
++			, path()
++			, symlink_path()
++		{}
++
++			symlink_file(symlink_file const& f)
++			: mode(f.mode)
++			, path(f.path)
++			, symlink_path(f.symlink_path)
++		{}
++
++		symlink_file& operator=(symlink_file const& f)
++		{
++			mode = f.mode;
++			path = f.path;
++			symlink_path = f.symlink_path;
++			return *this;
++		}
++
++		mode_t mode;
++		std::string path;
++		std::string symlink_path;
++};
++
+ 	// The ``file_storage`` class represents a file list and the piece
+ 	// size. Everything necessary to interpret a regular bittorrent storage
+ 	// file structure.
+ 	class TORRENT_EXPORT file_storage
+ 	{
+ 	friend class torrent_info;
++	friend class create_torrent;
+ 	public:
+ 		// hidden
+ 		file_storage();
+@@ -284,7 +319,7 @@
+ 		// make sure this requirement is fulfilled.
+ 		void add_file(file_entry const& e, char const* filehash = 0);
+ 		void add_file(std::string const& p, size_type size, int flags = 0
+-			, std::time_t mtime = 0, std::string const& s_p = "");
++			, std::time_t mtime = 0, std::string const& s_p = "", mode_t mode = 0644);
+ 
+ 		// renames the file at ``index`` to ``new_filename``. Keep in mind
+ 		// that filenames are expected to be UTF-8 encoded.
+@@ -512,6 +547,34 @@
+ 		size_type file_offset(internal_file_entry const& fe) const TORRENT_DEPRECATED;
+ #endif
+ 
++		void add_path(std::string path, mode_t mode);
++		void gen_paths_entry(entry &paths) const;
++		void print_paths() const
++		{
++			std::vector<mode_t>::const_iterator mode_it = m_paths_mode.begin();
++			std::vector<std::string>::const_iterator it = m_paths.begin();
++			for (; it != m_paths.end(); ++it, ++mode_it)
++			{
++				fprintf(stdout, "          %o %s\n", *mode_it, it->c_str());
++			}
++		}
++
++		bool has_symlinks() const { return !m_symlinks_ex.empty(); }
++		bool has_paths() const { return !m_paths.empty(); }
++		const std::vector<symlink_file>& get_symlink_file() const { return m_symlinks_ex; }
++		void add_symlink(const std::string& path, const std::string& symlink_path, mode_t mode);
++		void gen_symlinks_entry(entry &symlinks) const;
++		void print_symlinks() const
++		{
++			std::vector<symlink_file>::const_iterator it = m_symlinks_ex.begin();
++			for (; it != m_symlinks_ex.end(); ++it)
++			{
++				fprintf(stdout, "          %o %s -> %s\n"
++					, it->mode, it->path.c_str(), it->symlink_path.c_str());
++			}
++		}
++
++
+ 	private:
+ 
+ 		void update_path_index(internal_file_entry& e);
+@@ -551,6 +614,14 @@
+ 		// entry appended, to form full file paths
+ 		std::vector<std::string> m_paths;
+ 
++		// all paths mode, added by liuming03
++		// each element corresponds to the m_paths with same index
++		std::vector<mode_t> m_paths_mode;
++
++		// all symlinks, added by liuming03
++		std::vector<symlink_file> m_symlinks_ex;
++
++
+ 		// name of torrent. For multi-file torrents
+ 		// this is always the root directory
+ 		std::string m_name;
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/policy.hpp libtorrent/include/libtorrent/policy.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/policy.hpp	2014-05-04 00:55:32.000000000 +0800
++++ libtorrent/include/libtorrent/policy.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -163,6 +163,7 @@
+ 			size_type total_upload() const;
+ 			
+ 			boost::uint32_t rank(external_ip const& external, int external_port) const;
++			boost::uint32_t rank(const tcp::endpoint &local_interface) const;
+ 
+ 			libtorrent::address address() const;
+ 			char const* dest() const;
+@@ -427,6 +428,7 @@
+ 		bool compare_peer_erase(policy::peer const& lhs, policy::peer const& rhs) const;
+ 		bool compare_peer(policy::peer const& lhs, policy::peer const& rhs
+ 			, external_ip const& external, int source_port) const;
++		bool compare_peer(policy::peer const& lhs, policy::peer const& rhs) const;
+ 
+ 		iterator find_connect_candidate(int session_time);
+ 
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/session.hpp libtorrent/include/libtorrent/session.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/session.hpp	2014-04-05 16:10:22.000000000 +0800
++++ libtorrent/include/libtorrent/session.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -208,6 +208,8 @@
+ 		// destructing the session object. Because it can take a few second for
+ 		// it to finish. The timeout can be set with ``set_settings()``.
+ 		~session();
++		typedef boost::function<void(torrent_handle, boost::shared_ptr<ex_announce_request>)> ex_announce_func;
++		void add_ex_announce_func(const ex_announce_func &func);
+ 
+ 		// flags that determines which aspects of the session should be
+ 		// saved when calling save_state().
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/session_settings.hpp libtorrent/include/libtorrent/session_settings.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/session_settings.hpp	2014-05-11 10:52:10.000000000 +0800
++++ libtorrent/include/libtorrent/session_settings.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -742,8 +742,10 @@
+ 		// in seconds, defaults to 5 minutes and is used as a sanity check on
+ 		// what is returned from a tracker. It mitigates hammering misconfigured
+ 		// trackers.
+-		int min_announce_interval;
++		int min_announce_interval; // now this will only for seed torrent intervals, modify by liuming03
+ 
++		// download torrent any intervals will less than this, added by liuming03
++		int max_announce_interval;
+ 		// If true, partial pieces are picked before pieces that are more rare.
+ 		// If false, rare pieces are always prioritized, unless the number of
+ 		// partial pieces is growing out of proportion.
+@@ -1355,6 +1357,11 @@
+ 		// enables banning web seeds. By default, web seeds that send corrupt
+ 		// data are banned.
+ 		bool ban_web_seeds;
++
++		bool use_php_tracker; // added by liuming03
++
++		bool use_c_tracker; // added by liuming03
++
+ 		
+ 		// specifies the max number of bytes to receive into RAM buffers when
+ 		// downloading stuff over HTTP. Specifically when specifying a URL to a
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/torrent_handle.hpp libtorrent/include/libtorrent/torrent_handle.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/torrent_handle.hpp	2014-05-11 05:51:25.000000000 +0800
++++ libtorrent/include/libtorrent/torrent_handle.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -55,6 +55,7 @@
+ #include "libtorrent/torrent_info.hpp"
+ #include "libtorrent/ptime.hpp"
+ #include "libtorrent/config.hpp"
++#include "libtorrent/stat.hpp"
+ #include "libtorrent/storage.hpp"
+ #include "libtorrent/address.hpp"
+ #include "libtorrent/bitfield.hpp"
+@@ -73,6 +74,41 @@
+ 	struct torrent_status;
+ 	class torrent;
+ 
++// for thrift tracker announce message, added by liuming03
++	struct ex_announce_peer {
++		std::string peerid;
++		std::string ip;
++		uint16_t port;
++	};
++
++	struct ex_announce_request {
++		enum status_t {
++			METADATA = 0,
++			DOWNLOAD = 1,
++			SEEDING = 2,
++			STOPPED = 3,
++			PAUSED = 4,
++		};
++
++		std::string infohash;
++		ex_announce_peer peer;
++		int64_t uploaded;
++		int64_t downloaded;
++		int64_t left;
++		bool is_seed;
++		int num_want;
++		status_t status;
++		std::vector<std::pair<std::string, int> > trackers;
++	};
++
++	struct ex_announce_response {
++		int ret;
++		std::string failure_reason;
++		int min_interval;
++		bool have_seed;
++		std::vector<ex_announce_peer>  peers;
++	};
++
+ 	// allows torrent_handle to be used in unordered_map and unordered_set.
+ 	TORRENT_EXPORT std::size_t hash_value(torrent_status const& ts);
+ 
+@@ -242,6 +278,8 @@
+ 		// i.e. is_valid() will return false.
+ 		torrent_handle() {}
+ 
++		void recv_ex_tracker_announce_reply(boost::shared_ptr<ex_announce_response> response) const; // added by liuming03
++
+ 		// flags for add_piece().
+ 		enum flags_t { overwrite_existing = 1 };
+ 
+@@ -278,6 +316,8 @@
+ 		// otherwise.
+ 		bool have_piece(int piece) const;
+ 
++		void add_stats(stat const& s) const; // added by liuming03
++
+ 		// internal
+ 		void get_full_peer_list(std::vector<peer_list_entry>& v) const;
+ 
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/torrent.hpp libtorrent/include/libtorrent/torrent.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/torrent.hpp	2014-05-11 10:52:10.000000000 +0800
++++ libtorrent/include/libtorrent/torrent.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -875,6 +875,8 @@
+ 			--m_num_connecting;
+ 		}
+ 
++		void recv_ex_tracker_announce_reply(boost::shared_ptr<ex_announce_response> response);
++
+ 		bool is_ssl_torrent() const { return m_ssl_torrent; } 
+ #ifdef TORRENT_USE_OPENSSL
+ 		void set_ssl_cert(std::string const& certificate
+@@ -933,6 +935,10 @@
+ 		void remove_time_critical_pieces(std::vector<int> const& priority);
+ 		void request_time_critical_pieces();
+ 
++		void ex_tracker_announce(error_code ec);
++		void add_ex_tracker_timer(const time_duration& interval);
++
++
+ 		policy m_policy;
+ 
+ 		// all time totals of uploaded and downloaded payload
+@@ -1004,6 +1010,11 @@
+ 		// used for tracker announces
+ 		deadline_timer m_tracker_timer;
+ 
++		deadline_timer m_ex_tracker_timer;
++		std::vector<std::pair<std::string, int> > m_thrift_trackers;
++		boost::uint8_t m_ex_tracker_failed_count:7;
++		bool m_real_seed:1;
++
+ 		// this is the upload and download statistics for the whole torrent.
+ 		// it's updated from all its peers once every second.
+ 		libtorrent::stat m_stat;
+diff -Naur libtorrent-rasterbar-1.0.0/include/libtorrent/torrent_info.hpp libtorrent/include/libtorrent/torrent_info.hpp
+--- libtorrent-rasterbar-1.0.0/include/libtorrent/torrent_info.hpp	2014-03-23 14:56:36.000000000 +0800
++++ libtorrent/include/libtorrent/torrent_info.hpp	2014-10-11 18:55:34.000000000 +0800
+@@ -293,11 +293,28 @@
+ 		policy::ipv4_peer peer_info;
+ 	};
+ 
++	// added by liuming03
++	struct cluster_config_entry
++	{
++		cluster_config_entry() : port(0) {}
++
++		std::string host;
++		int port;
++		std::string user;
++		std::string passwd;
++		std::string prefix_path;
++	};
++
++
+ #ifndef BOOST_NO_EXCEPTIONS
+ 	// for backwards compatibility with 0.14
+ 	typedef libtorrent_exception invalid_torrent_file;
+ #endif
+ 
++	int TORRENT_EXPORT load_file(std::string const& filename
++		, std::vector<char>& v, error_code& ec, int limit = 80000000);
++
++
+ 	// This class represents the information stored in a .torrent file
+ 	class TORRENT_EXPORT torrent_info : public intrusive_ptr_base<torrent_info>
+ 	{
+@@ -342,10 +359,12 @@
+ #endif // TORRENT_NO_DEPRECATE
+ #endif
+ 		torrent_info(torrent_info const& t, int flags = 0);
+-		torrent_info(sha1_hash const& info_hash, int flags = 0);
++		torrent_info(sha1_hash const& info_hash, int flags = 0, const std::string &new_name = "");
+ 		torrent_info(lazy_entry const& torrent_file, error_code& ec, int flags = 0);
+-		torrent_info(char const* buffer, int size, error_code& ec, int flags = 0);
+-		torrent_info(std::string const& filename, error_code& ec, int flags = 0);
++		torrent_info(char const* buffer, int size, error_code& ec, int flags = 0,
++		             const std::string &new_name = "");
++		torrent_info(std::string const& filename, error_code& ec, int flags = 0
++			, const std::string &new_name = "");
+ #ifndef TORRENT_NO_DEPRECATE
+ #if TORRENT_USE_WSTRING
+ 		// all wstring APIs are deprecated since 0.16.11
+@@ -499,6 +518,10 @@
+ 		int num_files() const { return m_files.num_files(); }
+ 		file_entry file_at(int index) const { return m_files.at(index); }
+ 
++		const std::vector<std::string>& get_paths() const { return m_files.m_paths; }
++		const std::vector<mode_t>& get_paths_mode() const { return m_files.m_paths_mode; }
++
++
+ 		// This function will map a piece index, a byte offset within that piece and
+ 		// a size (in bytes) into the corresponding files with offsets where that data
+ 		// for that piece is supposed to be stored. See file_slice.
+@@ -598,6 +621,9 @@
+ 		// 
+ 		// .. _`posix time`: http://www.opengroup.org/onlinepubs/009695399/functions/time.html
+ 		const std::string& name() const { return m_files.name(); }
++		const std::string& new_name() const { return m_new_name; }
++		const cluster_config_entry& cluster_config() const { return m_cluster_config; }
++
+ 		boost::optional<time_t> creation_date() const;
+ 		const std::string& creator() const
+ 		{ return m_created_by; }
+@@ -707,6 +733,8 @@
+ 		// this will be set to that comment
+ 		std::string m_comment;
+ 
++		std::string m_new_name;
++
+ 		// an optional string naming the software used
+ 		// to create the torrent file
+ 		std::string m_created_by;
+@@ -742,6 +770,9 @@
+ 		// features are disabled for this torrent (unless the
+ 		// settings allows mixing i2p peers with regular peers)
+ 		bool m_i2p:1;
++
++
++		cluster_config_entry m_cluster_config;// added by liuming03
+ 	};
+ 
+ }
+diff -Naur libtorrent-rasterbar-1.0.0/libtorrent-rasterbar-cmake.pc libtorrent/libtorrent-rasterbar-cmake.pc
+--- libtorrent-rasterbar-1.0.0/libtorrent-rasterbar-cmake.pc	2014-05-12 07:22:24.000000000 +0800
++++ libtorrent/libtorrent-rasterbar-cmake.pc	2014-10-11 18:55:34.000000000 +0800
+@@ -2,5 +2,5 @@
+ Description: Bittorrent library.
+ Version: 1.0.0
+ Libs: -L${CMAKE_INSTALL_PREFIX}/lib -ltorrent-rasterbar
+-Cflags: -I${CMAKE_INSTALL_PREFIX}/include -I${CMAKE_INSTALL_PREFIX}/include/libtorrent  -DTORRENT_USE_OPENSSL  -DWITH_SHIPPED_GEOIP_H  -DBOOST_ASIO_HASH_MAP_BUCKETS=1021  -DBOOST_EXCEPTION_DISABLE  -DBOOST_ASIO_ENABLE_CANCELIO  -DBOOST_ASIO_DYN_LINK -DTORRENT_LINKING_SHARED  @CXX_DEFINES@
++Cflags: -I${CMAKE_INSTALL_PREFIX}/include -I${CMAKE_INSTALL_PREFIX}/include/libtorrent  -DTORRENT_NO_DEPRECATE  -DTORRENT_DISABLE_ENCRYPTION  -DTORRENT_DISABLE_GEO_IP  -DTORRENT_DISABLE_DHT  -DBOOST_ASIO_HASH_MAP_BUCKETS=1021  -DBOOST_EXCEPTION_DISABLE  -DBOOST_ASIO_ENABLE_CANCELIO  -DBOOST_ASIO_DYN_LINK @CXX_DEFINES@
+ 
+diff -Naur libtorrent-rasterbar-1.0.0/libtorrent-rasterbar.pc libtorrent/libtorrent-rasterbar.pc
+--- libtorrent-rasterbar-1.0.0/libtorrent-rasterbar.pc	2014-05-12 07:22:24.000000000 +0800
++++ libtorrent/libtorrent-rasterbar.pc	2014-10-11 18:55:34.000000000 +0800
+@@ -1,4 +1,4 @@
+-prefix=/usr/local
++prefix=/home/users/liuming03/workspace/op/oped/noah/thirdparty/libtorrent/tmp/libtorrent
+ exec_prefix=${prefix}
+ bindir=${exec_prefix}/bin
+ libdir=${exec_prefix}/lib
+@@ -11,6 +11,6 @@
+ Name: libtorrent-rasterbar
+ Description: Bittorrent library.
+ Version: 1.0.0
+-Libs: -L${libdir} -ltorrent-rasterbar -lboost_system-mt 
+-Libs.private:    -lssl -lcrypto 
+-Cflags: -I${includedir} -I${includedir}/libtorrent  -DTORRENT_USE_OPENSSL  -DWITH_SHIPPED_GEOIP_H  -DBOOST_ASIO_HASH_MAP_BUCKETS=1021  -DBOOST_EXCEPTION_DISABLE  -DBOOST_ASIO_ENABLE_CANCELIO  -DBOOST_ASIO_DYN_LINK -DTORRENT_LINKING_SHARED 
++Libs: -L${libdir} -ltorrent-rasterbar -lboost_system 
++Libs.private: -lrt -lpthread  -L./ -lpthread  
++Cflags: -I${includedir} -I${includedir}/libtorrent  -DTORRENT_NO_DEPRECATE  -DTORRENT_DISABLE_ENCRYPTION  -DTORRENT_DISABLE_GEO_IP  -DTORRENT_DISABLE_DHT  -DBOOST_ASIO_HASH_MAP_BUCKETS=1021  -DBOOST_EXCEPTION_DISABLE  -DBOOST_ASIO_ENABLE_CANCELIO  -DBOOST_ASIO_DYN_LINK
+diff -Naur libtorrent-rasterbar-1.0.0/src/create_torrent.cpp libtorrent/src/create_torrent.cpp
+--- libtorrent-rasterbar-1.0.0/src/create_torrent.cpp	2014-03-23 14:56:38.000000000 +0800
++++ libtorrent/src/create_torrent.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -49,7 +49,7 @@
+ 
+ 	namespace detail
+ 	{
+-		int get_file_attributes(std::string const& p)
++		int get_file_attributes(std::string const& p, int flags)
+ 		{
+ #ifdef TORRENT_WINDOWS
+ 
+@@ -65,7 +65,14 @@
+ 			return 0;
+ #else
+ 			struct stat s;
+-			if (lstat(convert_to_native(p).c_str(), &s) < 0) return 0;
++			int retval;
++			if (flags & dont_follow_links)
++				retval = ::lstat(convert_to_native(p).c_str(), &s);
++			else
++				retval = ::stat(convert_to_native(p).c_str(), &s);
++
++			if (retval < 0) return 0;
++
+ 			int file_attr = 0;
+ 			if (s.st_mode & S_IXUSR) 
+ 				file_attr += file_storage::attribute_executable;
+@@ -120,6 +127,7 @@
+ 
+ 			if (recurse)
+ 			{
++				fs.add_path(parent_path(combine_path(l, "x")), s.mode & 0777);
+ 				for (directory i(f, ec); !i.done(); i.next(ec))
+ 				{
+ 					std::string leaf = i.file();
+@@ -127,23 +135,26 @@
+ 					add_files_impl(fs, p, combine_path(l, leaf), pred, flags);
+ 				}
+ 			}
+-			else
++			else if (s.mode & (file_status::regular_file | file_status::link))
+ 			{
+ 				// #error use the fields from s
+-				int file_flags = get_file_attributes(f);
++				int file_flags = get_file_attributes(f, (flags & create_torrent::symlinks) ? dont_follow_links : 0);
+ 
+ 				// mask all bits to check if the file is a symlink
+ 				if ((file_flags & file_storage::attribute_symlink)
+ 					&& (flags & create_torrent::symlinks)) 
+ 				{
+ 					std::string sym_path = get_symlink_path(f);
+-					fs.add_file(l, 0, file_flags, s.mtime, sym_path);
++					fs.add_file(l, 0, file_flags, s.mtime, sym_path, s.mode & 0777);
+ 				}
+ 				else
+ 				{
+-					fs.add_file(l, s.file_size, file_flags, s.mtime);
++					fs.add_file(l, s.file_size, file_flags, s.mtime, "", s.mode & 0777);
+ 				}
+ 			}
++
++			if (fs.num_files() == 0) 
++				fs.set_name(l);
+ 		}
+ 	}
+ 
+@@ -287,8 +298,8 @@
+ 			const int target_size = 40 * 1024;
+ 			piece_size = int(fs.total_size() / (target_size / 20));
+ 	
+-			int i = 16*1024;
+-			for (; i < 2*1024*1024; i *= 2)
++			int i = 2 * 1024 * 1024;
++			for (; i < 10 * 1024 * 1024; i *= 2)
+ 			{
+ 				if (piece_size > i) continue;
+ 				break;
+@@ -457,6 +468,11 @@
+ 		}
+ 
+ 		info["name"] = m_files.name();
++		info["HADOOP_HOST"] = m_cluster_config.host;
++		info["HADOOP_PORT"] = m_cluster_config.port;
++		info["HADOOP_USER"] = m_cluster_config.user;
++		info["HADOOP_PASSWD"] = m_cluster_config.passwd;
++		info["dest_src"] = m_cluster_config.prefix_path;
+ 
+ 		if (!m_root_cert.empty())
+ 			info["ssl-cert"] = m_root_cert;
+@@ -468,6 +484,7 @@
+ 			file_entry e = m_files.at(0);
+ 			if (m_include_mtime) info["mtime"] = e.mtime;
+ 			info["length"] = e.size;
++			info["mode"] = e.mode;
+ 			if (e.pad_file
+ 				|| e.hidden_attribute
+ 				|| e.executable_attribute
+@@ -505,6 +522,7 @@
+ 					entry& file_e = files.list().back();
+ 					if (m_include_mtime && m_files.mtime(i)) file_e["mtime"] = m_files.mtime(i); 
+ 					file_e["length"] = m_files.file_size(i);
++					file_e["mode"] = m_files.at(i).mode;
+ 					entry& path_e = file_e["path"];
+ 
+ 					TORRENT_ASSERT(has_parent_path(m_files.file_path(i)));
+@@ -543,6 +561,20 @@
+ 			}
+ 		}
+ 
++		if (m_files.has_paths())
++		{
++			info["mode"] = *(m_files.m_paths_mode.begin());
++			entry& paths = info["paths"];
++			paths.list();
++			m_files.gen_paths_entry(paths);
++		}
++
++		if (m_files.has_symlinks())
++		{
++			entry& symlinks = info["symlinks"];
++			m_files.gen_symlinks_entry(symlinks);
++		}
++
+ 		info["piece length"] = m_files.piece_length();
+ 		if (m_merkle_torrent)
+ 		{
+@@ -610,6 +642,17 @@
+ 		m_root_cert = cert;
+ 	}
+ 
++	void create_torrent::set_cluster_config(const std::string &host, int port
++			, const std::string &user, const std::string &passwd, const std::string &path)
++	{
++		m_cluster_config.host = host;
++		m_cluster_config.port = port;
++		m_cluster_config.user = user;
++		m_cluster_config.passwd = passwd;
++		m_cluster_config.prefix_path = path;
++	}
++
++
+ 	void create_torrent::set_hash(int index, sha1_hash const& h)
+ 	{
+ 		TORRENT_ASSERT(index >= 0);
+diff -Naur libtorrent-rasterbar-1.0.0/src/enum_net.cpp libtorrent/src/enum_net.cpp
+--- libtorrent-rasterbar-1.0.0/src/enum_net.cpp	2014-03-23 14:56:38.000000000 +0800
++++ libtorrent/src/enum_net.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -67,6 +67,7 @@
+ #endif
+ 
+ #if TORRENT_USE_NETLINK
++#include <asm/types.h>
+ #include <linux/netlink.h>
+ #include <linux/rtnetlink.h>
+ #include <asm/types.h>
+diff -Naur libtorrent-rasterbar-1.0.0/src/file.cpp libtorrent/src/file.cpp
+--- libtorrent-rasterbar-1.0.0/src/file.cpp	2014-05-11 07:38:24.000000000 +0800
++++ libtorrent/src/file.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -250,7 +250,8 @@
+ 			| (S_ISFIFO(ret.st_mode) ? file_status::fifo : 0)
+ 			| (S_ISCHR(ret.st_mode) ? file_status::character_special : 0)
+ 			| (S_ISBLK(ret.st_mode) ? file_status::block_special : 0)
+-			| (S_ISSOCK(ret.st_mode) ? file_status::socket : 0);
++			| (S_ISSOCK(ret.st_mode) ? file_status::socket : 0)
++			| ret.st_mode & 0777;
+ 
+ #endif // TORRENT_WINDOWS
+ 	}
+@@ -531,7 +532,8 @@
+ 
+ 		int len = f.size() - 1;
+ 		// if the last character is / or \ ignore it
+-		if (f[len] == '/' || f[len] == '\\') --len;
++		//if (f[len] == '/' || f[len] == '\\') --len;//note this by liuming03, need use while instead of if
++		while (f[len] == '/' || f[len] == '\\') --len;
+ 		while (len >= 0)
+ 		{
+ 			if (f[len] == '/' || f[len] == '\\')
+@@ -553,7 +555,8 @@
+ 
+ 		int len = f.size();
+ 		// if the last character is / or \ ignore it
+-		if (f[len-1] == '/' || f[len-1] == '\\') --len;
++		// if (f[len-1] == '/' || f[len-1] == '\\') --len; //note this by liuming03, need use while instead of if
++		while (f[len-1] == '/' || f[len-1] == '\\') --len;
+ 		while (len > 0)
+ 		{
+ 			--len;
+@@ -580,16 +583,36 @@
+ 		{
+ 			// if the last character is a / (or \)
+ 			// ignore it
++			while ((sep > first) && (*sep == '/'
++#ifdef TORRENT_WINDOWS
++					|| *sep == '\\'
++#endif
++			))
++			{
++				--sep;
++			}
++
++			if (*sep == '/'
++#ifdef TORRENT_WINDOWS
++					|| *sep == '\\'
++#endif
++			)
++			{
++				return "/";
++			}
++
++
+ 			int len = 0;
+ 			while (sep > first)
+ 			{
+-				--sep;
++				//--sep;
+ 				if (*sep == '/'
+ #if defined(TORRENT_WINDOWS) || defined(TORRENT_OS2)
+ 					|| *sep == '\\'
+ #endif
+ 					)
+ 					return std::string(sep + 1, len);
++				--sep;
+ 				++len;
+ 			}
+ 			return std::string(first, len);
+diff -Naur libtorrent-rasterbar-1.0.0/src/file_storage.cpp libtorrent/src/file_storage.cpp
+--- libtorrent-rasterbar-1.0.0/src/file_storage.cpp	2014-05-10 10:50:00.000000000 +0800
++++ libtorrent/src/file_storage.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -69,6 +69,83 @@
+ 			return piece_length();
+ 	}
+ 
++	void file_storage::gen_paths_entry(entry &paths) const
++	{
++		// skip �root_path
++		std::vector<std::string>::const_iterator path_i = m_paths.begin() + 1;
++		std::vector<mode_t>::const_iterator mode_i = m_paths_mode.begin() + 1;
++		for (; path_i != m_paths.end(); ++path_i, ++mode_i)
++		{
++			paths.list().push_back(entry());
++			entry& p_e = paths.list().back();
++			p_e["mode"] = *mode_i;
++			entry& path_e = p_e["path"];
++			std::string split = split_path(*path_i);
++			for (char const* e = next_path_element(split.c_str()); //split.c_str();
++				e != 0; e = next_path_element(e))
++			{
++				if (*e == '\0')
++				{
++					continue;
++				}
++				path_e.list().push_back(entry(e));
++			}
++		}
++	}
++
++	void file_storage::add_symlink(const std::string& path, const std::string& symlink_path, mode_t mode)
++	{
++		if (path.empty() || symlink_path.empty())
++		{
++			return;
++		}
++		m_symlinks_ex.push_back(symlink_file());
++		symlink_file& sf = m_symlinks_ex.back();
++		sf.mode = mode;
++		sf.path = path;
++		sf.symlink_path = symlink_path;
++	}
++
++	void file_storage::gen_symlinks_entry(entry &symlinks) const
++	{
++		std::vector<symlink_file>::const_iterator it = m_symlinks_ex.begin(), end = m_symlinks_ex.end();
++		for(; it != end; ++it)
++		{
++			symlinks.list().push_back(entry());
++			entry& e = symlinks.list().back();
++			e["mode"] = it->mode;
++			entry& path_e = e["path"];
++			path_e.list();
++			std::string split = split_path(it->path);
++			for (char const* e = next_path_element(split.c_str());
++					e != 0; e = next_path_element(e))
++			{
++				if (*e == '\0')
++				{
++					continue;
++				}
++				path_e.list().push_back(entry(e));
++			}
++
++			e["symlink path"] = it->symlink_path;
++		}
++	}
++
++	void file_storage::add_path(std::string path, mode_t mode)
++	{
++		if (!path.empty())
++		{
++			std::vector<std::string>::reverse_iterator p
++				= std::find(m_paths.rbegin(), m_paths.rend(), path);
++			if (p == m_paths.rend())
++			{
++				m_paths.push_back(path);
++				m_paths_mode.push_back(mode);
++			}
++		}
++	}
++
++
+ 	void file_storage::update_path_index(internal_file_entry& e)
+ 	{
+ 		std::string fname = e.filename();
+@@ -85,7 +162,7 @@
+ 			return;
+ 		}
+ 
+-		if (parent.size() >= m_name.size()
++		if (false && parent.size() >= m_name.size() // modify by liuming03
+ 			&& parent.compare(0, m_name.size(), m_name) == 0
+ 			&& (parent.size() == m_name.size()
+ #ifdef TORRENT_WINDOWS
+@@ -112,6 +189,7 @@
+ 			// no, we don't. add it
+ 			e.path_index = m_paths.size();
+ 			m_paths.push_back(parent);
++			m_paths_mode.push_back(0755);
+ 		}
+ 		else
+ 		{
+@@ -125,6 +203,7 @@
+ 		, mtime(0), pad_file(false), hidden_attribute(false)
+ 		, executable_attribute(false)
+ 		, symlink_attribute(false)
++		, mode(0744)
+ 	{}
+ 
+ 	file_entry::~file_entry() {}
+@@ -146,6 +225,7 @@
+ 		, symlink_attribute(fe.symlink_attribute)
+ 		, name(0)
+ 		, path_index(fe.path_index)
++		, mode(fe.mode)
+ 	{
+ 		set_name(fe.filename().c_str());
+ 	}
+@@ -160,6 +240,7 @@
+ 		hidden_attribute = fe.hidden_attribute;
+ 		executable_attribute = fe.executable_attribute;
+ 		symlink_attribute = fe.symlink_attribute;
++		mode = fe.mode;
+ 		no_root_dir = fe.no_root_dir;
+ 		set_name(fe.filename().c_str());
+ 		return *this;
+@@ -355,6 +436,7 @@
+ 		ret.hidden_attribute = ife.hidden_attribute;
+ 		ret.executable_attribute = ife.executable_attribute;
+ 		ret.symlink_attribute = ife.symlink_attribute;
++		ret.mode = ife.mode;
+ 		if (ife.symlink_index != internal_file_entry::not_a_symlink)
+ 			ret.symlink_path = symlink(index);
+ 		ret.filehash = hash(index);
+@@ -397,7 +479,7 @@
+ 	}
+ 
+ 	void file_storage::add_file(std::string const& file, size_type size, int flags
+-		, std::time_t mtime, std::string const& symlink_path)
++		, std::time_t mtime, std::string const& symlink_path, mode_t mode)
+ 	{
+ 		TORRENT_ASSERT_PRECOND(!is_complete(file));
+ 		TORRENT_ASSERT_PRECOND(size >= 0);
+@@ -417,6 +499,12 @@
+ 				m_name = split_path(file).c_str();
+ 		}
+ 		TORRENT_ASSERT_PRECOND(m_name == split_path(file).c_str());
++		if (flags & attribute_symlink)
++		{
++			add_symlink(file, symlink_path, mode);
++			return;
++		}
++
+ 		m_files.push_back(internal_file_entry());
+ 		internal_file_entry& e = m_files.back();
+ 		e.set_name(file.c_str());
+@@ -426,6 +514,7 @@
+ 		e.hidden_attribute = (flags & attribute_hidden) != 0;
+ 		e.executable_attribute = (flags & attribute_executable) != 0;
+ 		e.symlink_attribute = (flags & attribute_symlink) != 0;
++		e.mode = mode;
+ 		if (e.symlink_attribute)
+ 		{
+ 			e.symlink_index = m_symlinks.size();
+diff -Naur libtorrent-rasterbar-1.0.0/src/metadata_transfer.cpp libtorrent/src/metadata_transfer.cpp
+--- libtorrent-rasterbar-1.0.0/src/metadata_transfer.cpp	2014-03-23 14:56:40.000000000 +0800
++++ libtorrent/src/metadata_transfer.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -122,8 +122,9 @@
+ 		{
+ 			if (!m_metadata)
+ 			{
+-				m_metadata = m_torrent.torrent_file().metadata();
+ 				m_metadata_size = m_torrent.torrent_file().metadata_size();
++				m_metadata.reset(new char[m_metadata_size]);
++				memcpy(m_metadata.get(), m_torrent.torrent_file().metadata().get(), m_metadata_size);
+ 				TORRENT_ASSERT(hasher(m_metadata.get(), m_metadata_size).final()
+ 					== m_torrent.torrent_file().info_hash());
+ 			}
+@@ -175,7 +176,7 @@
+ 
+ 			// clear the storage for the bitfield
+ 			std::vector<bool>().swap(m_have_metadata);
+-			std::vector<int>().swap(m_requested_metadata);
++			//std::vector<int>().swap(m_requested_metadata);
+ 
+ 			return true;
+ 		}
+@@ -368,7 +369,7 @@
+ 			if (msg != 14) return false;
+ 			if (m_message_index == 0) return false;
+ 
+-			if (length > 500 * 1024)
++			if (length > m_torrent.settings().max_metadata_size)
+ 			{
+ 				m_pc.disconnect(errors::metadata_too_large, 2);
+ 				return true;
+diff -Naur libtorrent-rasterbar-1.0.0/src/peer_connection.cpp libtorrent/src/peer_connection.cpp
+--- libtorrent-rasterbar-1.0.0/src/peer_connection.cpp	2014-05-10 10:50:02.000000000 +0800
++++ libtorrent/src/peer_connection.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -743,7 +743,8 @@
+ 
+ 		TORRENT_ASSERT(m_num_pieces == m_have_piece.count());
+ 
+-		if (m_num_pieces == int(m_have_piece.size()))
++		int num_pieces = int(m_have_piece.size());
++		if (num_pieces != 0 && m_num_pieces == num_pieces)
+ 		{
+ #ifdef TORRENT_VERBOSE_LOGGING
+ 			peer_log("*** THIS IS A SEED [ p: %p ]", m_peer_info);
+@@ -5583,6 +5584,7 @@
+ #if defined TORRENT_VERBOSE_LOGGING
+ 			peer_log(">>> SET_TOS[ tos: %d e: %s ]", m_ses.settings().peer_tos, ec.message().c_str());
+ #endif
++			m_ses.setup_socket_buffers(*m_socket);
+ 		}
+ 
+ #ifndef TORRENT_DISABLE_EXTENSIONS
+diff -Naur libtorrent-rasterbar-1.0.0/src/policy.cpp libtorrent/src/policy.cpp
+--- libtorrent-rasterbar-1.0.0/src/policy.cpp	2014-05-10 10:50:02.000000000 +0800
++++ libtorrent/src/policy.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -841,7 +841,7 @@
+ 			// pe, which is the peer m_round_robin points to. If it is, just
+ 			// keep looking.
+ 			if (candidate != -1
+-				&& compare_peer(*m_peers[candidate], pe, external, external_port)) continue;
++				&& compare_peer(*m_peers[candidate], pe)) continue;
+ 
+ 			if (pe.last_connected
+ 				&& session_time - pe.last_connected <
+@@ -1941,6 +1941,13 @@
+ 		return peer_rank;
+ 	}
+ 
++	boost::uint32_t policy::peer::rank(const tcp::endpoint &local_interface) const
++	{
++		if (peer_rank == 0)
++			peer_rank = peer_priority(local_interface, tcp::endpoint(this->address(), this->port));
++		return peer_rank;
++	}
++
+ 	size_type policy::peer::total_download() const
+ 	{
+ 		if (connection != 0)
+@@ -2024,5 +2031,38 @@
+ 		if (lhs_peer_rank > rhs_peer_rank) return true;
+ 		return false;
+ 	}
+-}
+ 
++	// this returns true if lhs is a better connect candidate than rhs
++	bool policy::compare_peer(policy::peer const& lhs, policy::peer const& rhs) const
++	{
++		// prefer peers with lower failcount
++		if (lhs.failcount != rhs.failcount)
++			return lhs.failcount < rhs.failcount;
++
++		// Local peers should always be tried first
++		bool lhs_local = is_local(lhs.address());
++		bool rhs_local = is_local(rhs.address());
++		if (lhs_local != rhs_local) return lhs_local > rhs_local;
++
++		if (lhs.last_connected != rhs.last_connected)
++			return lhs.last_connected < rhs.last_connected;
++
++		int lhs_rank = source_rank(lhs.source);
++		int rhs_rank = source_rank(rhs.source);
++		if (lhs_rank != rhs_rank) return lhs_rank > rhs_rank;
++
++#ifndef TORRENT_DISABLE_GEO_IP
++		// don't bias fast peers when seeding
++		if (!m_finished && m_torrent->session().has_asnum_db())
++		{
++			int lhs_as = lhs.inet_as ? lhs.inet_as->second : 0;
++			int rhs_as = rhs.inet_as ? rhs.inet_as->second : 0;
++			if (lhs_as != rhs_as) return lhs_as > rhs_as;
++		}
++#endif
++		boost::uint32_t lhs_peer_rank = lhs.rank(m_torrent->session().local_interface());
++		boost::uint32_t rhs_peer_rank = rhs.rank(m_torrent->session().local_interface());
++		if (lhs_peer_rank > rhs_peer_rank) return true;
++		return false;
++	}
++}
+diff -Naur libtorrent-rasterbar-1.0.0/src/session.cpp libtorrent/src/session.cpp
+--- libtorrent-rasterbar-1.0.0/src/session.cpp	2014-05-11 10:52:10.000000000 +0800
++++ libtorrent/src/session.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -461,6 +461,11 @@
+ 		}
+ 	}
+ 
++	void session::add_ex_announce_func(const ex_announce_func &func)
++	{
++		TORRENT_SYNC_CALL1(add_ex_announce_func, func);
++	}
++
+ 	void session::save_state(entry& e, boost::uint32_t flags) const
+ 	{
+ 		TORRENT_SYNC_CALL2(save_state, &e, flags);
+@@ -1315,6 +1320,7 @@
+ 		, max_peerlist_size(4000)
+ 		, max_paused_peerlist_size(4000)
+ 		, min_announce_interval(5 * 60)
++		, max_announce_interval(100)
+ 		, prioritize_partial_pieces(false)
+ 		, auto_manage_startup(120)
+ 		, rate_limit_ip_overhead(true)
+@@ -1410,6 +1416,8 @@
+ 		, ssl_listen(4433)
+ 		, tracker_backoff(250)
+ 		, ban_web_seeds(true)
++		, use_php_tracker(false)
++		, use_c_tracker(true)
+ 		, max_http_recv_buffer_size(4*1024*1024)
+ 		, support_share_mode(true)
+ 		, support_merkle_torrents(false)
+diff -Naur libtorrent-rasterbar-1.0.0/src/session_impl.cpp libtorrent/src/session_impl.cpp
+--- libtorrent-rasterbar-1.0.0/src/session_impl.cpp	2014-05-11 10:52:10.000000000 +0800
++++ libtorrent/src/session_impl.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -45,6 +45,7 @@
+ #include <boost/limits.hpp>
+ #include <boost/bind.hpp>
+ #include <boost/function_equal.hpp>
++#include <boost/asio/ip/host_name.hpp>
+ 
+ #ifdef TORRENT_USE_VALGRIND
+ #include <valgrind/memcheck.h>
+@@ -1209,6 +1210,24 @@
+ #endif
+ 	}
+ 
++	void session_impl::init_local_interface()
++	{
++		error_code ec;
++		tcp::resolver resolver(m_io_service);
++		tcp::resolver::query query(boost::asio::ip::host_name(), "");
++		tcp::resolver::iterator iter = resolver.resolve(query, ec);
++		tcp::resolver::iterator end;
++		while (iter != end)
++		{
++			m_ipv4_local_interface.address(iter->endpoint().address());
++			if (!is_any(m_ipv4_local_interface.address())) {
++				break;
++			}
++			++iter;
++		}
++		m_ipv4_local_interface.port(listen_port());
++	}
++
+ 	void session_impl::init()
+ 	{
+ #if defined TORRENT_LOGGING || defined TORRENT_VERBOSE_LOGGING
+@@ -1248,6 +1267,7 @@
+ #if defined TORRENT_LOGGING || defined TORRENT_VERBOSE_LOGGING
+ 		session_log(" done starting session");
+ #endif
++		init_local_interface();
+ 	}
+ 
+ 	void session_impl::save_state(entry* eptr, boost::uint32_t flags) const
+diff -Naur libtorrent-rasterbar-1.0.0/src/torrent.cpp libtorrent/src/torrent.cpp
+--- libtorrent-rasterbar-1.0.0/src/torrent.cpp	2014-05-11 10:52:10.000000000 +0800
++++ libtorrent/src/torrent.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -168,6 +168,10 @@
+ 		, m_storage(0)
+ 		, m_num_connecting(0)
+ 		, m_tracker_timer(ses.m_io_service)
++		, m_ex_tracker_timer(ses.m_io_service)
++		, m_thrift_trackers(p.thrift_trackers)
++		, m_ex_tracker_failed_count(0)
++		, m_real_seed(p.flags & add_torrent_params::flag_real_seed)
+ 		, m_ses(ses)
+ 		, m_host_resolver(ses.m_io_service)
+ 		, m_trackerid(p.trackerid)
+@@ -645,8 +649,8 @@
+ 		// to be a seed after all
+ 		if (!seed)
+ 		{
+-			set_state(torrent_status::downloading);
+-			force_recheck();
++			// set_state(torrent_status::downloading); // we don't want to download data, modify by liuming03
++			// force_recheck();
+ 		}
+ 		m_num_verified = 0;
+ 		m_verified.clear();
+@@ -1478,7 +1482,7 @@
+ 			return;
+ 		}
+ 
+-		if (m_torrent_file->num_pieces() == 0)
++		if (m_torrent_file->num_pieces() < 0)
+ 		{
+ 			set_error(errors::torrent_invalid_length, "");
+ 			pause();
+@@ -2283,7 +2287,7 @@
+ 
+ 			if (ae.tier > tier && sent_announce && !settings().announce_to_all_tiers) break;
+ 			if (ae.is_working()) { tier = ae.tier; sent_announce = false; }
+-			if (!ae.can_announce(now, is_seed()))
++			if (e != tracker_request::stopped && !ae.can_announce(now, is_seed()))
+ 			{
+ 				// this counts
+ 				if (ae.is_working()) sent_announce = true;
+@@ -3079,6 +3083,8 @@
+ 
+ 		state_updated();
+ 
++		if (!m_picker) return; // if torrent finished, m_picker will reset, so return immediate, added bu liuming03
++
+ 		// even though the piece passed the hash-check
+ 		// it might still have failed being written to disk
+ 		// if so, piece_picker::write_failed() has been
+@@ -3402,6 +3408,7 @@
+ 			if (p->trust_points <= -7
+ 				|| (single_peer && allow_disconnect))
+ 			{
++				/* we don't want ban peer in inner network, added by liuming03
+ 				// we don't trust this peer anymore
+ 				// ban it.
+ 				if (m_ses.m_alerts.should_post<peer_ban_alert>())
+@@ -3417,6 +3424,7 @@
+ #ifdef TORRENT_STATS
+ 				++m_ses.m_banned_for_hash_failure;
+ #endif
++				*/
+ 
+ 				if (p->connection)
+ 				{
+@@ -4482,8 +4490,10 @@
+ 
+ 			TORRENT_ASSERT(pp->prev_amount_upload == 0);
+ 			TORRENT_ASSERT(pp->prev_amount_download == 0);
+-			pp->prev_amount_download += p->statistics().total_payload_download() >> 10;
+-			pp->prev_amount_upload += p->statistics().total_payload_upload() >> 10;
++
++			// for my statistics we need not to save prev amount download/upload data, so annotate, liuming03
++			// pp->prev_amount_download += p->statistics().total_payload_download() >> 10;
++			// pp->prev_amount_upload += p->statistics().total_payload_upload() >> 10;
+ 		}
+ 
+ 		m_policy.connection_closed(*p, m_ses.session_time());
+@@ -6394,7 +6404,9 @@
+ 			i->next_announce = now;
+ 			i->min_announce = now;
+ 		}
+-		announce_with_tracker();
++
++		if (settings().use_php_tracker)
++			announce_with_tracker();
+ 	}
+ 
+ 	// this will move the tracker with the given index
+@@ -7666,7 +7678,15 @@
+ 		m_total_redundant_bytes = 0;
+ 		m_stat.clear();
+ 
+-		announce_with_tracker();
++		if (settings().use_php_tracker) {
++			announce_with_tracker();
++		}
++
++		if (settings().use_c_tracker) {
++			error_code ec;
++			ex_tracker_announce(ec);
++		}
++
+ 
+ 		// private torrents are never announced on LSD
+ 		// or on DHT, we don't need this timer.
+@@ -7686,6 +7706,7 @@
+ 
+ 		error_code ec;
+ 		m_tracker_timer.cancel(ec);
++		m_ex_tracker_timer.cancel(ec);
+ 
+ 		m_announcing = false;
+ 
+@@ -7696,7 +7717,14 @@
+ 			i->next_announce = now;
+ 			i->min_announce = now;
+ 		}
+-		announce_with_tracker(tracker_request::stopped);
++		if (settings().use_php_tracker) {
++			announce_with_tracker(tracker_request::stopped);
++		}
++
++		if (settings().use_c_tracker) {
++			ec.clear();
++			ex_tracker_announce(ec);
++		}
+ 	}
+ 
+ 	void torrent::second_tick(stat& accumulator, int tick_interval_ms)
+@@ -9374,5 +9402,107 @@
+ 	}
+ #endif
+ 
++	void torrent::add_ex_tracker_timer(const time_duration& interval)
++	{
++		error_code ec;
++		m_ex_tracker_timer.expires_from_now(interval, ec);
++		m_ex_tracker_timer.async_wait(
++				boost::bind(&torrent::ex_tracker_announce, shared_from_this(), _1));
++	}
++
++	void torrent::ex_tracker_announce(error_code ec)
++	{
++		if (ec) return;
++
++		boost::shared_ptr<ex_announce_request> request(new ex_announce_request());
++		request->infohash = m_torrent_file->info_hash().to_string();
++		request->peer.ip = m_ses.local_interface().address().to_string(ec);
++		request->peer.port = m_ses.local_interface().port();
++		request->peer.peerid = m_ses.get_peer_id().to_string();
++		request->uploaded = m_stat.total_payload_upload();
++		request->downloaded = m_stat.total_payload_download();
++		request->left = bytes_left();
++		request->is_seed = m_real_seed;
++		request->num_want = settings().num_want;
++		request->trackers = m_thrift_trackers;
++		if (m_abort) {
++			request->status = ex_announce_request::STOPPED;
++			request->num_want = 0;
++		} else if (is_torrent_paused()) {
++			request->status = ex_announce_request::PAUSED;
++		} else {
++			switch (m_state) {
++				case torrent_status::downloading_metadata:
++					request->status = ex_announce_request::METADATA;
++					break;
++				case torrent_status::downloading:
++					request->status = ex_announce_request::DOWNLOAD;
++					break;
++				case torrent_status::finished:
++				case torrent_status::seeding:
++					request->status = ex_announce_request::SEEDING;
++					break;
++				case torrent_status::allocating:
++				case torrent_status::checking_files:
++				case torrent_status::checking_resume_data:
++				case torrent_status::queued_for_checking:
++					request->status = ex_announce_request::PAUSED;
++					break;
++			}
++		}
++
++		m_ses.m_ex_annfunc(get_handle(), request);
++	}
++
++	void torrent::recv_ex_tracker_announce_reply(boost::shared_ptr<ex_announce_response> response)
++	{
++		if (m_abort) {
++			return;
++		}
++		if (response->ret != 0) {
++			++m_ex_tracker_failed_count;
++			if (m_ex_tracker_failed_count > 60) {
++				m_ex_tracker_failed_count /= 2;
++			}
++			add_ex_tracker_timer(seconds(m_ex_tracker_failed_count));
++			return;
++		} else {
++			m_ex_tracker_failed_count = 0;
++		}
++
++		for (std::vector<ex_announce_peer>::iterator i = response->peers.begin()
++				; i != response->peers.end(); ++i) {
++			peer_id pid(i->peerid);
++			error_code ec;
++			tcp::endpoint a(address::from_string(i->ip, ec), i->port);
++			if (ec) {
++				continue;
++			}
++			m_policy.add_peer(a, pid, peer_info::tracker, 0);
++		}
++
++		int interval = settings().min_announce_interval;
++		if (!is_seed()) {
++			int interval1 = m_policy.num_peers() + m_policy.num_seeds() * 3 + 1;
++			int limit = download_limit();
++			if (limit <= 0) {
++				limit = settings().download_rate_limit + 1;
++			}
++			interval = static_cast<int>(static_cast<int64_t>(m_stat.download_rate()) * 100 / limit);
++			if (interval < interval1) {
++				interval = interval1;
++			}
++			if (interval > settings().max_announce_interval) {
++				interval = settings().max_announce_interval;
++			}
++			if (interval < response->min_interval) {
++				interval = response->min_interval;
++			}
++		}
++
++		add_ex_tracker_timer(seconds(interval));
++		state_updated();
++	}
++
+ }
+ 
+diff -Naur libtorrent-rasterbar-1.0.0/src/torrent_handle.cpp libtorrent/src/torrent_handle.cpp
+--- libtorrent-rasterbar-1.0.0/src/torrent_handle.cpp	2014-05-11 05:45:43.000000000 +0800
++++ libtorrent/src/torrent_handle.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -718,6 +718,12 @@
+ 		TORRENT_ASYNC_CALL1(add_tracker, url);
+ 	}
+ 
++	void torrent_handle::recv_ex_tracker_announce_reply(boost::shared_ptr<ex_announce_response> response) const
++	{
++		TORRENT_ASYNC_CALL1(recv_ex_tracker_announce_reply, response);
++	}
++
++
+ 	void torrent_handle::add_piece(int piece, char const* data, int flags) const
+ 	{
+ 		TORRENT_SYNC_CALL3(add_piece, piece, data, flags);
+@@ -734,6 +740,12 @@
+ 		return r;
+ 	}
+ 
++	void torrent_handle::add_stats(stat const& s) const
++	{
++		TORRENT_ASYNC_CALL1(add_stats, s);
++	}
++
++
+ 	storage_interface* torrent_handle::get_storage_impl() const
+ 	{
+ 		TORRENT_SYNC_CALL_RET(storage_interface*, 0, get_storage);
+diff -Naur libtorrent-rasterbar-1.0.0/src/torrent_info.cpp libtorrent/src/torrent_info.cpp
+--- libtorrent-rasterbar-1.0.0/src/torrent_info.cpp	2014-05-10 10:50:02.000000000 +0800
++++ libtorrent/src/torrent_info.cpp	2014-10-11 18:55:34.000000000 +0800
+@@ -245,6 +245,8 @@
+ 
+ 		// remove trailing spaces and dots. These aren't allowed in filenames on windows
+ 		// apply rules consistently across platforms though
++		// This is linux, so don't have this limit --by hechaobin01
++		/*
+ 		for (int i = path_element.size() - 1; i >= 0; --i)
+ 		{
+ 			if (path_element[i] != ' ' && path_element[i] != '.') break;
+@@ -252,6 +254,7 @@
+ 		}
+ 
+ 		if (path_element.empty()) path_element = "_";
++		*/
+ #endif
+ 	}
+ 
+@@ -302,6 +305,7 @@
+ 		if (length == 0 || length->type() != lazy_entry::int_t)
+ 			return false;
+ 		target.size = length->int_value();
++		target.mode = dict.dict_find_int_value("mode", 0644);
+ 		if (target.size < 0)
+ 			return false;
+ 
+@@ -373,6 +377,30 @@
+ 		return true;
+ 	}
+ 
++	bool extract_single_path(lazy_entry const& dict, file_storage& target)
++	{
++		if (dict.type() != lazy_entry::dict_t) return false;
++		mode_t mode = dict.dict_find_int_value("mode", 0755);
++		lazy_entry const* p = dict.dict_find("path");
++		if (p == 0 || p->type() != lazy_entry::list_t)
++			return false;
++
++		std::string path;
++		for (int i = 0, end(p->list_size()); i < end; ++i)
++		{
++			if (p->list_at(i)->type() != lazy_entry::string_t)
++				return false;
++				std::string path_element = p->list_at(i)->string_value();
++				trim_path_element(path_element);
++				path = combine_path(path, path_element);
++		}
++		path = sanitize_path(path);
++		verify_encoding(path, true);
++
++		target.add_path(path, mode);
++		return true;
++	}
++
+ 	struct string_less_no_case
+ 	{
+ 		bool operator()(std::string const& lhs, std::string const& rhs)
+@@ -449,6 +477,82 @@
+ 		return true;
+ 	}
+ 
++	bool extract_paths(lazy_entry const& paths, file_storage& target
++		, const std::string &root_dir)
++	{
++		if (paths.type() != lazy_entry::list_t) return false;
++		for (int i = 0, end(paths.list_size()); i < end; ++i)
++		{
++			lazy_entry const& dict = *paths.list_at(i);
++			if (dict.type() != lazy_entry::dict_t) return false;
++			mode_t mode = dict.dict_find_int_value("mode", 0755);
++			lazy_entry const* p = dict.dict_find("path");
++			if (p == 0 || p->type() != lazy_entry::list_t)
++				return false;
++
++			std::string path = root_dir;
++			for (int i = 0, end(p->list_size()); i < end; ++i)
++			{
++				if (p->list_at(i)->type() != lazy_entry::string_t)
++					return false;
++					std::string path_element = p->list_at(i)->string_value();
++					trim_path_element(path_element);
++					path = combine_path(path, path_element);
++			};
++			path = sanitize_path(path);
++			verify_encoding(path, true);
++			target.add_path(parent_path(combine_path(path, "x")), mode & 0777);
++		}
++		return true;
++	}
++
++    bool extract_symlinks(lazy_entry const& symlinks, file_storage& target
++            , const std::string &root_dir)
++    {
++        if (symlinks.type() != lazy_entry::list_t) return false;
++        for (int i = 0, end(symlinks.list_size()); i < end; ++i)
++        {
++            lazy_entry const& dict = *symlinks.list_at(i);
++            if (dict.type() != lazy_entry::dict_t) return false;
++            mode_t mode = dict.dict_find_int_value("mode", 0755);
++
++            lazy_entry const* p = dict.dict_find("path");
++            if (p == 0 || p->type() != lazy_entry::list_t)
++                return false;
++            std::string path = root_dir;
++            for (int i = 0, end(p->list_size()); i < end; ++i)
++            {
++                if (p->list_at(i)->type() != lazy_entry::string_t)
++                    return false;
++                std::string path_element = p->list_at(i)->string_value();
++                trim_path_element(path_element);
++                path = combine_path(path, path_element);
++            }
++            path = sanitize_path(path);
++            verify_encoding(path, true);
++
++            lazy_entry const* sp = dict.dict_find("symlink path");
++            if (sp == 0 || sp->type() != lazy_entry::string_t)
++                return false;
++            std::string symlink_path = sp->string_value();
++            /*
++            for (int i = 0, end(sp->list_size()); i < end; ++i)
++            {
++                if (sp->list_at(i)->type() != lazy_entry::string_t)
++                    return false;
++                std::string symlink_path_element = sp->list_at(i)->string_value();
++                trim_path_element(symlink_path_element);
++                symlink_path = combine_path(symlink_path, symlink_path_element);
++            }
++            symlink_path = sanitize_path(symlink_path);
++            */
++            verify_encoding(symlink_path, true);
++            target.add_symlink(path, symlink_path, mode);
++        }
++        return true;
++    }
++
++
+ 	int merkle_get_parent(int tree_node)
+ 	{
+ 		// node 0 doesn't have a parent
+@@ -480,7 +584,7 @@
+ 		return ret;
+ 	}
+ 
+-	int load_file(std::string const& filename, std::vector<char>& v, error_code& ec, int limit = 8000000)
++	int load_file(std::string const& filename, std::vector<char>& v, error_code& ec, int limit)
+ 	{
+ 		ec.clear();
+ 		file f;
+@@ -599,6 +703,7 @@
+ 		, m_merkle_tree(t.m_merkle_tree)
+ 		, m_piece_hashes(t.m_piece_hashes)
+ 		, m_comment(t.m_comment)
++		, m_new_name(t.m_new_name)
+ 		, m_created_by(t.m_created_by)
+ 		, m_creation_date(t.m_creation_date)
+ 		, m_info_hash(t.m_info_hash)
+@@ -606,6 +711,7 @@
+ 		, m_multifile(t.m_multifile)
+ 		, m_private(t.m_private)
+ 		, m_i2p(t.m_i2p)
++		, m_cluster_config(t.m_cluster_config)
+ 	{
+ #if TORRENT_USE_INVARIANT_CHECKS
+ 		t.check_invariant();
+@@ -795,9 +901,11 @@
+ 		INVARIANT_CHECK;
+ 	}
+ 
+-	torrent_info::torrent_info(char const* buffer, int size, error_code& ec, int flags)
++	torrent_info::torrent_info(char const* buffer, int size, error_code& ec, int flags
++		, const std::string &new_name)
+ 		: m_merkle_first_leaf(0)
+ 		, m_piece_hashes(0)
++		, m_new_name(new_name)
+ 		, m_creation_date(0)
+ 		, m_info_section_size(0)
+ 		, m_multifile(false)
+@@ -812,9 +920,11 @@
+ 		INVARIANT_CHECK;
+ 	}
+ 
+-	torrent_info::torrent_info(std::string const& filename, error_code& ec, int flags)
++	torrent_info::torrent_info(std::string const& filename, error_code& ec, int flags
++		, const std::string &new_name)
+ 		: m_merkle_first_leaf(0)
+ 		, m_piece_hashes(0)
++		, m_new_name(new_name)
+ 		, m_creation_date(0)
+ 		, m_info_section_size(0)
+ 		, m_multifile(false)
+@@ -826,7 +936,7 @@
+ 		if (ret < 0) return;
+ 
+ 		lazy_entry e;
+-		if (buf.size() == 0 || lazy_bdecode(&buf[0], &buf[0] + buf.size(), e, ec) != 0)
++		if (buf.size() == 0 || lazy_bdecode(&buf[0], &buf[0] + buf.size(), e, ec, 0, 1000, 10000000) != 0)
+ 			return;
+ 		parse_torrent_file(e, ec, flags);
+ 
+@@ -864,9 +974,10 @@
+ 	// will not contain any hashes, comments, creation date
+ 	// just the necessary to use it with piece manager
+ 	// used for torrents with no metadata
+-	torrent_info::torrent_info(sha1_hash const& info_hash, int flags)
++	torrent_info::torrent_info(sha1_hash const& info_hash, int flags, const std::string &new_name)
+ 		: m_merkle_first_leaf(0)
+ 		, m_piece_hashes(0)
++		, m_new_name(new_name)
+ 		, m_creation_date(time(0))
+ 		, m_info_hash(info_hash)
+ 		, m_info_section_size(0)
+@@ -989,7 +1100,38 @@
+ 
+ 		// correct utf-8 encoding errors
+ 		verify_encoding(name, true);
+-	
++
++		if (!m_new_name.empty()) {
++			name = m_new_name;
++		}
++
++		bool has_path = false;
++		lazy_entry const* paths = info.dict_find_list("paths");
++		if (paths != 0)
++		{
++			has_path = true;
++			m_files.add_path(parent_path(combine_path(name, "x"))
++				, info.dict_find_int_value("mode", 0755) & 0777);// add root path
++			if (paths->type() == lazy_entry::list_t && !extract_paths(*paths, m_files, name))
++			{
++				ec = errors::torrent_file_parse_failed;
++				return false;
++			}
++		}
++
++		bool has_symlinks = false;
++		lazy_entry const* symlinks = info.dict_find_list("symlinks");
++		if (symlinks != 0)
++		{
++			has_symlinks = true;
++			if (!extract_symlinks(*symlinks, m_files, name))
++			{
++				ec = errors::torrent_file_parse_failed;
++				return false;
++			}
++		}
++
++
+ 		// extract file list
+ 		lazy_entry const* i = info.dict_find_list("files");
+ 		if (i == 0)
+@@ -1006,6 +1148,7 @@
+ 				return false;
+ 			}
+ 			e.mtime = info.dict_find_int_value("mtime", 0);
++			e.mode = info.dict_find_int_value("mode", 0744);
+ 			lazy_entry const* attr = info.dict_find_string("attr");
+ 			if (attr)
+ 			{
+@@ -1051,6 +1194,12 @@
+ 		}
+ 		m_files.set_name(name);
+ 
++		m_cluster_config.host = info.dict_find_string_value("HADOOP_HOST");
++		m_cluster_config.port = info.dict_find_int_value("HADOOP_PORT", 0);
++		m_cluster_config.user = info.dict_find_string_value("HADOOP_USER");
++		m_cluster_config.passwd = info.dict_find_string_value("HADOOP_PASSWD");
++		m_cluster_config.prefix_path = info.dict_find_string_value("dest_src");
++
+ 		// extract sha-1 hashes for all pieces
+ 		// we want this division to round upwards, that's why we have the
+ 		// extra addition
