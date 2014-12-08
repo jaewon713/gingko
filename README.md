@@ -1,6 +1,22 @@
 # gingko
 ======
 
+## gingko简介
+<img src="bbts.jpg" alt="bbts" width="100%" /></br>
+
+gingko是noah提供的基于BitTorrent的P2P文件传输工具。其主要有以下优点：
+
+* 支持数十万台机器规模的p2p传输。
+* 下载速度快
+* 可进行单任务上传、下载限速以及做种机整体上传限速
+* 做种过程中，任务限速、暂停、恢复等可动态改变
+* 下游机器群提供多种不同源下载方式（torrent文件、infohash、http地址指定的torrent文件），尽可能满足用户自动化需求
+* 支持多机做种
+* 支持hdfs上的数据做种
+* 优化后的上游结点选择策略，最大程度减少跨机房流量，并提高传输速度
+* 支持断点续传
+* 可随时查看任务状态、进度等信息
+
 p2p tool
 
 # gingko组成部分
@@ -34,15 +50,15 @@ p2p tool
 
     `./NOAH/control start`
 
-# 试用下载
-1. 找一台起了bbts-agent做种进程的机器，启动做种任务
-    
-    `gko3 serve -p /path/to/a -S -1`
-命令行取得infohash
+# 一分钟快速使用gingko进行下载
+##种子机做种
+指定做种目录/path/to/a，做种时间1小时（3600s），种子文件保存在/path/to/a.torrent
 
-2. 下载
+    gko3 serve -p /path/to/a -r /path/to/a.torrent -S 3600
+##下载机下载
+指定种子文件为之前生成的a.torrent，数据保存在目录/path/to/save
 
-    `gko3 down -i infohash -p /path/to/save -d 10M`
+    gko3 down -r /path/to/a.torrent -p /path/to/save
 
 gko3命令行工具使用说明
 ====================
@@ -631,4 +647,73 @@ list命令可查看目前所有后台任务
 修改bbts-agent全局限速，或某个后台做种任务的限速，或设定unix sockt path的一个下载任务的限速。目前只有root用户可以修改全局限速，其他用户只能修改本用户添加任务的配置信息。
 
     gko3 setopt [-t taskid | --unix-socket path] [-d downrate] [-u uprate] [-c connlimit]
+
+hdfs下载及hadoopseed使用说明
+============================
+##hdfs下载
+从hdfs上进行p2p下载数据时，需要分两步进行：
+###生成种子文件*.torrent
+生成种子文件有两种方式，如下：
+
+* （1）源数据本身在某台单机上，那么在该机器上执行[gko3 mkseed](gko3.md#mkseed)命令生成一份种子文件
+* （2）源数据在hdfs集群上，那么可使用我们的分布式做种工具<a href="#hadoopseed">hadoopseed</a>进行做种。具体使用方式请参考
+
+###下载数据
+下载命令行参考[gko3 down](gko3.md#down)。如果是单机生成的torrent文件，在没有指定数据在hdfs上的地址的情况下，需要通过指定-C参数来确定
+
+    gko3 down -r *.torrent -p ./ -C hdfs://user:passwd@namenode:port/path
+当然，mkseed的时候也可以统一指定-C参数，这样数据在集群上的地址会写入到torrent文件中去，下载时无须重复指定（如重复指定以下载时指定的hdfs地址为主）
+
+    gko3 mkseed -p path -r *.torrent -C hdfs://user:passwd@namenode:port/path
+
+##<a name="hadoopseed">hadoopseed</a>使用说明
+###简介
+`hadoopseed`工具随`gko3`一起上线，同样会在`/usr/bin`下打个软链。该工具用来对hdfs集群上某个数据进行计算，生成种子文件*.torrent供gingko 3.0进行基于hdfs的p2p下载。
+
+###前提条件
+使用`hadoopseed`需要`python/java/hadoop`支持，目前noah已未全百度绝大部分机器部署了这些基础工具，部署路径在`/home/opt`，没有部署的可能是磁盘inode数不足等原因，使用`hadoopseed`前请确定`/home/opt`下的工具是可用的。如不可用请联系noah_help协助部署。
+
+###使用方式
+    hadoopseed -u user,passwd -H NameNode:port -T JobTracker:port -d 集群目录 (-f 本地torrent文件 | -F 远程torrent文件) [-s 分块大小]
+<table border="0">
+    <tr>
+        <td width="10%">-u</td>
+        <td width="20%">--ugi</td>
+        <td width="20%">用户名密码</td>
+        <td width="50">用户必须有执行MR任务的权限，用户名密码以逗号分隔</td>
+    </tr>
+    <tr>
+        <td>-H</td>
+        <td>--hadoop_host</td>
+        <td>namenode:port</td>
+        <td>hdfs namenode及其端口，以冒号分隔</td>
+    </tr>
+    <tr>
+        <td>-T</td>
+        <td>--hadoop_tracker</td>
+        <td>jobtracker:port</td>
+        <td>hadoop jobtracker及其端口，以逗号分隔</td>
+    </tr>
+    <tr>
+        <td>-f</td>
+        <td>--torrent_file</td>
+        <td>本地种子文件路径</td>
+        <td>生成的种子文件保存在本地的路径</td>
+    </tr>
+    <tr>
+        <td>-F</td>
+        <td>--hdfs_torrent_file</td>
+        <td>hdfs上种子文件路径</td>
+        <td>生成的种子文件保存在hdfs上的路径；-f -F指定其一即可</td>
+    </tr>
+    <tr>
+        <td>-s</td>
+        <td>--piece_size</td>
+        <td>分块大小</td>
+        <td>torrent中对共享文件piece的大小划分，默认8MB，一般无须用户指定。</td>
+    </tr>
+</table>
+hadoopseed命令执行后，得到torrent文件，用hadoopseed生成的种子文件会将数据在hdfs上的地址一并保存进去，类似[gko3 mkseed](gko3.md#mkseed)指定了-C参数。用gko3下载时首先获取种子文件，然后运行gko3的下载命令即可。
+
+    gko3 down –r .torrent –p path
 
