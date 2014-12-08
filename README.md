@@ -22,6 +22,7 @@ p2p tool
     `cd $gko && sh build.sh`
 
 4. 编译gko-tracker
+
     `cd $gko-tracker && sh build.sh`
 
 # 运行
